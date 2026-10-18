@@ -173,7 +173,24 @@ async function createOrder(req) {
 
   let n;
   try { n = await nextNumber(s, id); }
-  catch (e) { if (Object.keys(want).length) await changeSold(s, today, Object.fromEntries(Object.entries(want).map(([k, v]) => [k, -v]))); return json({ error: e.message }, 503); }
+  catch (e) {
+    // Se la numerazione fallisce, libera il riferimento di idempotenza
+    // soltanto se appartiene a questo tentativo. Altrimenti i retry
+    // continuerebbero a cercare un ordine mai salvato.
+    if (ref) {
+      try {
+        const claim = await s.get(`ref/${ref}`, { type: "json" });
+        if (claim?.id === id) await s.delete(`ref/${ref}`);
+      } catch (cleanupError) { console.error("Pulizia riferimento ordine", cleanupError); }
+    }
+    if (Object.keys(want).length) {
+      try {
+        await changeSold(s, today, Object.fromEntries(Object.entries(want).map(([k, v]) => [k, -v])));
+      } catch (cleanupError) { console.error("Ripristino porzioni", cleanupError); }
+    }
+    console.error("Numerazione ordine", e);
+    return json({ error: "Ordine non registrato, riprova tra un attimo" }, 503);
+  }
 
   const by = staff ? WHO[role] : "cliente";
   const session = table ? await sessionOf(s, table, staff ? WHO[role] : "qr") : null;
