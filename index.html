@@ -390,7 +390,7 @@ ORDINI
 - Quando il cliente sceglie un piatto aggiungilo con questa riga a fine risposta: <carrello>[{"id":"P01","q":2,"nota":"ben cotta"}]<\/carrello>
 - Non calcolare totali: li calcola il sito.
 - Quando il cliente ha finito:
-  - MODALITÀ SITO (asporto): chiedi sempre "A che nome metto l'ordine?". Solo quando hai il nome scrivi <ordine>{"nome":"Mario"}<\/ordine>. Il sito chiede l'orario di ritiro e mostra il riepilogo.
+  - MODALITÀ SITO (asporto): chiedi sempre "A che nome metto l'ordine?". Solo quando hai il nome scrivi <ordine>{"nome":"Mario"}<\/ordine>. Il sito chiede il telefono e l'orario di ritiro e mostra il riepilogo.
   - MODALITÀ TAVOLO: non chiedere nome né telefono. Scrivi <ordine>{}<\/ordine>: il sito mostra il riepilogo e la comanda va in cucina.
 
 PRENOTAZIONI (solo MODALITÀ SITO)
@@ -791,7 +791,7 @@ function bookRanges(iso){
 }
 function bookingOff(){ return R.booking_on === false; }
 var BK = { ppl: 2 };
-// prenotazione dal pulsante "Prenota": la richiesta arriva al pannello e si apre WhatsApp con il riepilogo
+// prenotazione dal pulsante "Prenota": la richiesta arriva nel pannello; il ristorante conferma con un messaggio
 $("bookBtn").onclick = function(){
   if (bookingOff()) {
     openSheet("book", { t: "Prenota un tavolo", s: R.name }, '<p style="margin:0">Al momento le prenotazioni online sono sospese. Per prenotare chiamaci' + (R.phone ? " al <b>" + esc(R.phone) + "</b>" : "") + ".</p>",
@@ -809,8 +809,8 @@ $("bookBtn").onclick = function(){
     '<label>Telefono<input id="bkPhone" type="tel" autocomplete="tel" maxlength="20" placeholder="Per la conferma del ristorante" value="' + esc(BK.phone || sv.phone || "") + '" required></label>' +
     '<label>Note (facoltative)<input id="bkNote" maxlength="150" placeholder="Es. seggiolone, tavolo all\'aperto, allergie…" value="' + esc(BK.note || "") + '"></label>' +
     "</form>";
-  var foot = '<button class="btn wa" style="width:100%" id="bkSend"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.3 14.2c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.1-4.5-3.9-4.7-4.1-.1-.2-1.1-1.5-1.1-2.8 0-1.3.7-2 1-2.3.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 1.9c.1.2.1.3 0 .5l-.3.5-.4.4c-.1.1-.3.3-.1.6.2.3.7 1.2 1.6 2 1.1 1 2 1.3 2.3 1.4.3.1.5.1.6-.1l.9-1c.2-.3.4-.2.7-.1l1.8.9c.3.1.5.2.5.3.1.2.1.7-.1 1.2z"/></svg> Invia la richiesta</button>' +
-    '<p style="margin:8px 0 0;font-size:11.5px;color:var(--muted);text-align:center">È una richiesta: il tavolo è confermato quando il ristorante ti risponde.</p>';
+  var foot = '<button class="btn coral full" id="bkSend">Invia la richiesta</button>' +
+    '<p style="margin:8px 0 0;font-size:11.5px;color:var(--muted);text-align:center">È una richiesta: il ristorante ti conferma il tavolo con un messaggio al numero che hai indicato.</p>';
   openSheet("book", { t: "Prenota un tavolo", s: R.name }, body, foot);
   function check(){
     var d = $("bkDay").value, w = $("bkWarn"), sl = d ? bookSlots(d) : [], cl = d && closureOf(d);
@@ -835,12 +835,16 @@ $("bookBtn").onclick = function(){
     store("cv-pickup", Object.assign(store("cv-pickup") || {}, { name: name, phone: phone }));
     var when = longDay(day);
     var txt = "Buongiorno " + R.name + ", vorrei prenotare un tavolo.\nGiorno: " + when + "\nOra: " + BK.time + "\nPersone: " + BK.ppl + "\nNome: " + name + "\nTelefono: " + phone + (BK.note ? "\nNota: " + BK.note : "") + "\nGrazie!";
-    TK.ev("prenota_riepilogo"); TK.ev("prenota_whatsapp"); TK.send();
-    window.open("https://wa.me/" + waNumber() + "?text=" + encodeURIComponent(txt), "_blank", "noopener");
+    TK.ev("prenota_riepilogo"); TK.ev("prenota"); TK.send();
     // registra la richiesta nel pannello (stessa funzione della chat)
     FL = { step: null, d: { day: day, time: BK.time, ppl: BK.ppl, name: name, phone: phone, note: BK.note, ref: newRef().replace(/[^a-z0-9]/gi, "").toLowerCase().slice(0, 32) } };
     prSave(true); FL = { step: null, d: {} };
-    closeSheet();
+    openSheet("book", { t: NOSEND ? "Prova completata" : "Richiesta inviata", s: R.name },
+      '<p style="margin:0 0 10px;font-size:15px"><b>' + (NOSEND ? "In " + (MODE === "prova" ? "modalità prova" : "anteprima") + " la richiesta non viene inviata." : "✅ Abbiamo ricevuto la tua richiesta!") + "</b></p>" +
+      '<p style="margin:0 0 10px">' + esc(when) + " alle <b>" + esc(BK.time) + "</b> · " + esc(pplTxt(BK.ppl)) + " · a nome <b>" + esc(name) + "</b></p>" +
+      '<p style="margin:0;color:var(--muted)">Il ristorante ti conferma il tavolo con un messaggio al <b>' + esc(phone) + "</b>. Se hai bisogno puoi anche chiamarci" + (R.phone ? " al " + esc(R.phone) : "") + ".</p>",
+      '<button class="btn sea full" id="bkOk">Torna al menu</button>');
+    if ($("bkOk")) $("bkOk").onclick = closeSheet;
   };
 };
 // filtri
@@ -1417,9 +1421,8 @@ msgsEl.addEventListener("click", function(e){
   if (f) { e.stopPropagation(); if (S.busy) return; TK.mq("Pulsante: " + qrLabel(f.dataset.fl)); bubble("u", esc(f.textContent.replace(/^[^\wÀ-ÿ]+/, "").trim() || f.textContent)); TK.ev("marina_msg"); flow(f.dataset.fl); return; }
   var wa = e.target.closest("[data-wa]");
   if (wa) {
-    TK.ev(wa.dataset.wa === "order" ? "wa_ordine" : "prenota_whatsapp");
-    if (wa.dataset.wa === "order") { TK.mq("Pulsante: invia ordine su WhatsApp"); flow("or:send"); TK.send(); return; }
-    if (wa.dataset.wa === "book") { prSave(); FL.step = null; setTimeout(function(){ say(renderRich(NOSEND ? "Fatto (in " + (MODE === "prova" ? "modalità prova" : "anteprima") + " la richiesta non viene inviata)." : "Richiesta inviata al ristorante ✅ Ti si è aperto anche WhatsApp con il riepilogo: premi invio per mandarcelo. Il tavolo è confermato solo quando il ristorante ti risponde. A presto!"), true); }, 700); }
+    if (wa.dataset.wa === "order") { TK.mq("Pulsante: invia ordine"); flow("or:send"); TK.send(); return; }
+    if (wa.dataset.wa === "book") { prSave(); FL.step = null; setTimeout(function(){ say(renderRich(NOSEND ? "Fatto (in " + (MODE === "prova" ? "modalità prova" : "anteprima") + " la richiesta non viene inviata)." : "Richiesta inviata al ristorante ✅ Ti confermiamo il tavolo con un messaggio" + (FL.d && FL.d.phone ? " al **" + esc(FL.d.phone) + "**" : "") + ". A presto!"), true); }, 700); }
     TK.send(); return;
   }
   var q = e.target.closest("[data-ask]");
@@ -1590,10 +1593,10 @@ function prSummary(pre){
   store("cv-pickup", Object.assign(store("cv-pickup") || {}, { name: d.name, phone: d.phone }));
   var href = "https://wa.me/" + waNumber() + "?text=" + encodeURIComponent(prWaText(d));
   TK.ev("prenota_riepilogo");
-  return say(renderRich((pre || "") + "Ecco il riepilogo della tua **richiesta** di prenotazione:\n**" + longDay(d.day) + "** alle **" + d.time + "**\n" + pplTxt(d.ppl) + " · a nome **" + esc(d.name) + "**\nTelefono " + esc(d.phone) + (d.note ? "\nNota: " + esc(d.note) : "") + "\n\nSe è tutto giusto tocca il pulsante: la richiesta arriva al ristorante e si apre WhatsApp con il riepilogo già scritto, ti basta premere invio. Il tavolo è confermato solo quando il ristorante ti risponde. Se vuoi cambiare qualcosa, scrivimelo pure (per esempio \"facciamo alle 21\").") +
-    '<div class="qrs"><a class="qa wa" href="' + esc(href) + '" target="_blank" rel="noopener" data-wa="book">Invia su WhatsApp</a>' + fbtn("pr:start", "Ricomincia") + "</div>");
+  return say(renderRich((pre || "") + "Ecco il riepilogo della tua **richiesta** di prenotazione:\n**" + longDay(d.day) + "** alle **" + d.time + "**\n" + pplTxt(d.ppl) + " · a nome **" + esc(d.name) + "**\nTelefono " + esc(d.phone) + (d.note ? "\nNota: " + esc(d.note) : "") + "\n\nSe è tutto giusto tocca **Invia la richiesta**: arriva subito al ristorante, che ti conferma il tavolo con un messaggio al tuo numero. Se vuoi cambiare qualcosa, scrivimelo pure (per esempio \"facciamo alle 21\").") +
+    '<div class="qrs"><button type="button" class="pri" data-wa="book">Invia la richiesta</button>' + fbtn("pr:start", "Ricomincia") + "</div>");
 }
-// salva la prenotazione nel pannello quando il cliente tocca il pulsante WhatsApp
+// salva la prenotazione nel pannello quando il cliente tocca "Invia la richiesta"
 function prSave(fromSheet){
   var d = FL.d; if (!d || !d.day || !d.phone || d.saved === d.ref) return;
   d.saved = d.ref; if (!fromSheet) TK.ev("prenota");
@@ -1710,9 +1713,11 @@ async function flow(cmd){
       var sv = store("cv-pickup") || {};
       return say(sum + renderRich("\n\nA che nome metto l'ordine?") + (sv.name ? fbtns([fbtn("or:name:" + sv.name, esc(sv.name))]) : ""));
     }
-    if (sub === "name") {
-      FL.d.name = val; FL.step = null;
-      store("cv-pickup", Object.assign(store("cv-pickup") || {}, { name: val }));
+    if (sub === "name" || sub === "phone") {
+      if (sub === "name") { FL.d.name = val; store("cv-pickup", Object.assign(store("cv-pickup") || {}, { name: val })); }
+      else { FL.d.phone = val; store("cv-pickup", Object.assign(store("cv-pickup") || {}, { phone: val })); }
+      FL.step = null; val = FL.d.name;
+      if (!FL.d.phone) { var ph0 = (store("cv-pickup") || {}).phone; FL.step = "or_phone"; return say(renderRich("Grazie **" + esc(val) + "**! Mi lasci un numero di telefono? Serve al ristorante per confermarti l'ordine.") + (ph0 ? fbtns([fbtn("or:phone:" + ph0, esc(ph0))]) : ""), true); }
       var slots = pickupInfo().slots;
       if (!slots.length) return say(renderRich(pickupInfo().msg || "Per oggi l'asporto è chiuso.") + fbtns([fbtn("pr:start", "Prenota un tavolo")]));
       return say(renderRich("Grazie **" + esc(val) + "**! A che ora passi a ritirarlo? Paghi al ritiro 💳") + fbtns(slots.slice(0, 12).map(function(t){ return fbtn("or:time:" + t, t); })), true);
@@ -1720,23 +1725,23 @@ async function flow(cmd){
     if (sub === "time") {
       FL.d.time = val; FL.step = "or_confirm";
       if (!FL.d.name) { FL.step = "or_name"; return say(renderRich("A che nome metto l'ordine?"), true); }
-      var href = "https://wa.me/" + waNumber() + "?text=" + encodeURIComponent(orderWaText());
+      if (!FL.d.phone) return flow("or:name:" + FL.d.name);
       TK.ev("riepilogo_chat");
-      return say(renderRich("Ecco il riepilogo 📋\n" + cartLines() + "\n**Totale " + euro(total()) + "**\nA nome di **" + esc(FL.d.name) + "** · ritiro alle **" + val + "**\n\nTocca il pulsante: si apre WhatsApp con l'ordine già scritto e l'ordine arriva anche in cucina.") +
-        '<div class="qrs"><a class="qa wa" href="' + esc(href) + '" target="_blank" rel="noopener" data-wa="order">Invia l\'ordine su WhatsApp</a><button type="button" data-cart="1">Modifica</button></div>');
+      return say(renderRich("Ecco il riepilogo 📋\n" + cartLines() + "\n**Totale " + euro(total()) + "**\nA nome di **" + esc(FL.d.name) + "** · tel. " + esc(FL.d.phone) + " · ritiro alle **" + val + "**\n\nTocca **Invia l'ordine**: arriva subito in cucina e il ristorante ti conferma con un messaggio. Paghi al ritiro.") +
+        '<div class="qrs"><button type="button" class="pri" data-wa="order">Invia l\'ordine</button><button type="button" data-cart="1">Modifica</button></div>');
     }
     if (sub === "send") {
       if (!S.cart.length) return flow("or:done");
       if (!orderRef) orderRef = newRef();
       var payload = { note: S.note, ref: orderRef, items: S.cart.map(function(l){ return { id: l.id, q: l.qty, nota: l.note || "" }; }) }, where;
       if (TABLE) { payload.table = TABLE; where = { table: TABLE }; }
-      else { payload.type = "asporto"; payload.via = "whatsapp"; payload.name = FL.d.name; payload.phone = (store("cv-pickup") || {}).phone || ""; payload.time = FL.d.time; where = { asporto: true, time: FL.d.time }; }
-      var w = await say(TABLE ? "Invio l'ordine in cucina… ⏳" : "Mando l'ordine anche alla cucina… ⏳", true);
+      else { payload.type = "asporto"; payload.name = FL.d.name; payload.phone = FL.d.phone || (store("cv-pickup") || {}).phone || ""; payload.time = FL.d.time; where = { asporto: true, time: FL.d.time }; }
+      var w = await say(TABLE ? "Invio l'ordine in cucina… ⏳" : "Mando l'ordine alla cucina… ⏳", true);
       if (NOSEND) { w.innerHTML = "Ordine pronto! (" + (MODE === "prova" ? "modalità prova" : "anteprima") + ": non viene trasmesso)"; closeChat(); showDone(where, null); return; }
       try {
         var j = await sendOrder(payload, where);
         FL = { step: null, d: {} };
-        w.innerHTML = renderRich("Fatto! 🎉 Ordine **#" + j.code + "** " + (TABLE ? "inviato alla cucina." : "ricevuto anche dalla cucina.") + " Puoi seguirne lo stato in alto nel menu.");
+        w.innerHTML = renderRich("Fatto! 🎉 Ordine **#" + j.code + "** " + (TABLE ? "inviato alla cucina." : "ricevuto dalla cucina: ti confermiamo con un messaggio.") + " Puoi seguirne lo stato in alto nel menu.");
         setTimeout(function(){ closeChat(); showDone(where, j); }, 900);
       } catch (e) { w.innerHTML = esc("Non sono riuscita a inviare l'ordine: " + (e.message || e) + ".") + fbtns([fbtn("or:send", "Riprova"), '<button type="button" data-cart="1">Apri il carrello</button>']); }
       return;
@@ -1764,6 +1769,11 @@ function flowText(t){
   // una domanda o una frase che non c'entra: esco dalla conversazione guidata e rispondo normalmente
   var off = /\?$/.test(t) || t.split(/\s+/).length > 6 || /^(annulla|basta|stop|no grazie|lascia stare)$/i.test(t);
   if (off) { FL.step = null; return false; }
+  if (st === "or_phone") {
+    var dgo = t.replace(/\D/g, "");
+    if (dgo.length < 6 || dgo.length > 15) { say("Il numero non mi sembra giusto. Riprova, per esempio 333 1234567.", true); return true; }
+    flow("or:phone:" + t.replace(/[^\d+ ]/g, "").trim().slice(0, 20)); return true;
+  }
   if (st === "or_name") {
     var nm = parseBooking(t, "pr_name").name || (!/\d/.test(t) && t.trim().split(/\s+/).length <= 4 ? t.trim().replace(/^(a nome( di)?|nome)\s+/i, "").replace(/\b\w/g, function(c){ return c.toUpperCase(); }) : "");
     if (nm.length < 2) { say("Mi scrivi il nome per l'ordine? 🙂", true); return true; }

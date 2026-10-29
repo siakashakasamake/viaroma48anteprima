@@ -1029,6 +1029,7 @@ async function askReason(){
 }
 async function setOrderStatus(id, to){
   var o = findOrder(id); if (!o || OBUSY[id]) return;
+  var from0 = o.status;
   var reason = "";
   if (to === "cancelled") { reason = await askReason(); if (!reason) return; }
   OBUSY[id] = to; rerenderOrders();
@@ -1042,6 +1043,16 @@ async function setOrderStatus(id, to){
   }
   delete OBUSY[id]; rerenderOrders(); paintBadges();
   if ($("dlg").open && DLG.order === id) orderDetail(id);
+  var o2 = findOrder(id), pk2 = o2 && o2.pickup || {};
+  if (o2 && o2.type === "asporto" && pk2.phone && o2.status === to && (to === "cancelled" || (o.status === "new" || from0 === "new") && (to === "accepted" || to === "preparing")))
+    msgDlg({ title: to === "cancelled" ? "Ordine annullato" : "Ordine accettato", saved: true, phone: pk2.phone, msg: asportoMsg(o2, to),
+      intro: "Vuoi avvisare <b>" + esc(pk2.name || "il cliente") + "</b>? Il messaggio è pronto: puoi modificarlo prima di mandarlo." });
+}
+function asportoMsg(o, st){
+  var R = PUB ? PUB.restaurant : {}, pk = o.pickup || {};
+  if (st === "cancelled") return "Ciao " + (pk.name || "") + ", ci dispiace: il tuo ordine #" + o.code + " da " + R.name + " è stato annullato" + (o.cancelReason ? " (" + o.cancelReason + ")" : "") + ". Per qualsiasi cosa chiamaci" + (R.phone ? " al " + R.phone : "") + ".";
+  if (st === "ready") return "Ciao " + (pk.name || "") + "! Il tuo ordine #" + o.code + " da " + R.name + " è pronto: ti aspettiamo!";
+  return "Ciao " + (pk.name || "") + "! Abbiamo ricevuto il tuo ordine #" + o.code + " da " + R.name + ": sarà pronto per il ritiro alle " + (pk.time || "ora indicata") + ". Totale " + euro(o.total) + ", paghi al ritiro. A dopo!";
 }
 function rerenderOrders(){ if (LIVE_RENDER[CUR]) LIVE_RENDER[CUR](); }
 document.addEventListener("click", function(e){
@@ -1077,8 +1088,9 @@ function orderDetail(id){
     (o.note ? '<div class="warnbox">' + ic("info") + "<div><b>Nota del cliente</b><br>" + esc(o.note) + "</div></div>" : "") +
     (cur ? '<p class="hint" style="margin:0">Ordine registrato prima del salvataggio degli allergeni negli ordini: gli allergeni mostrati sono quelli del menu attuale.</p>' : '<p class="hint" style="margin:0">Nomi, prezzi e allergeni sono quelli al momento dell\'ordine: modifiche successive al menu non li cambiano.</p>') +
     '<div><h3 style="margin:4px 0 6px;font-size:14px">Cronologia</h3>' + histHtml(o.history, function(s){ return s === "served" ? servedLbl(o) : OST[s] || s; }) + "</div>";
-  openDlg({ title: "Ordine #" + o.code, body: body, foot: '<span class="sp"></span>' + actsHtml(o, true), wide: true });
+  openDlg({ title: "Ordine #" + o.code, body: body, foot: (o.type === "asporto" && pk.phone ? '<button class="btn ghost" id="oMsg">' + ic("chat", "s") + "Scrivi al cliente</button>" : "") + '<span class="sp"></span>' + actsHtml(o, true), wide: true });
   DLG.order = id;
+  if ($("oMsg")) $("oMsg").onclick = function(){ msgDlg({ title: "Scrivi al cliente", phone: pk.phone, msg: asportoMsg(o, o.status === "ready" ? "ready" : o.status === "cancelled" ? "cancelled" : "accepted") }); };
 }
 
 // =====================================================================================
@@ -1486,6 +1498,20 @@ function renderBook(){
   $("bkBox").innerHTML = html;
 }
 function telOf(p){ return String(p || "").replace(/[^\d+]/g, ""); }
+function smsTo(phone, text){
+  var n = String(phone || "").replace(/[^\d+]/g, ""); if (!n) return "";
+  if (n[0] !== "+" && n.indexOf("00") !== 0 && n.length <= 10 && n[0] === "3") n = "+39" + n;
+  return "sms:" + n + "?&body=" + encodeURIComponent(text);
+}
+function msgDlg(o){
+  openDlg({ title: o.title,
+    body: (o.intro ? '<p style="margin:0">' + o.intro + "</p>" : "") +
+      '<label class="field">Messaggio<textarea id="nMsg" rows="5">' + esc(o.msg) + "</textarea></label>" +
+      '<p class="hint" style="margin:0">' + (o.phone ? "Scegli come mandarlo dal telefono del locale: si apre con il messaggio già scritto e parte solo quando premi Invia." : "Non c'è un numero di telefono.") + "</p>",
+    foot: '<span class="sp"></span><button class="btn ghost" data-close>' + (o.saved ? "Non ora" : "Chiudi") + "</button>" + (o.phone ? '<a class="btn ghost" href="tel:' + esc(telOf(o.phone)) + '">' + ic("phone", "s") + 'Chiama</a><button class="btn ghost" id="nSms">' + ic("chat", "s") + 'SMS</button><button class="btn dark" id="nWa">' + ic("wa", "s") + "WhatsApp</button>" : "") });
+  if ($("nSms")) $("nSms").onclick = function(){ var u = smsTo(o.phone, $("nMsg").value); if (!u) return; window.location.href = u; closeDlg(true); toast("SMS aperto: controlla e premi Invia"); };
+  if ($("nWa")) $("nWa").onclick = function(){ var u = waTo(o.phone, $("nMsg").value); if (!u) return; window.open(u, "_blank", "noopener"); closeDlg(true); toast("WhatsApp aperto: controlla la chat e premi Invia"); };
+}
 function waTo(phone, text){
   var n = String(phone || "").replace(/[^\d+]/g, ""); if (!n) return "";
   if (n[0] === "+") n = n.slice(1); else if (n.indexOf("00") === 0) n = n.slice(2); else if (n.length <= 10 && n[0] === "3") n = "39" + n;
@@ -1498,7 +1524,7 @@ function bkCard(x){
   if (x.status === "confermata") acts += (past ? b("arrivata", "Completata", "dark") + b("noshow", "Non presentato", "ghost") : "") + b("annullata", "Annulla", "warn");
   if (x.status === "arrivata" || x.status === "noshow") acts += b("confermata", ic("undo", "s") + "Riporta a confermata", "ghost");
   if (x.status === "rifiutata" || x.status === "annullata") acts += b("nuova", ic("undo", "s") + "Riapri come richiesta", "ghost");
-  if (x.phone) acts += '<a class="btn ghost sm" href="tel:' + esc(telOf(x.phone)) + '">' + ic("phone", "s") + "Chiama</a>" + '<button class="btn ghost sm" data-bkwa="' + x.id + '">' + ic("wa", "s") + "WhatsApp</button>";
+  if (x.phone) acts += '<a class="btn ghost sm" href="tel:' + esc(telOf(x.phone)) + '">' + ic("phone", "s") + "Chiama</a>" + '<button class="btn ghost sm" data-bkwa="' + x.id + '">' + ic("chat", "s") + "Messaggio</button>";
   var flags = (x.flags || []).map(function(f){ return '<span class="tag red">' + ic("alert", "s") + esc(f) + "</span>"; }).join("");
   return '<div class="bk ' + x.status + '"><div class="tm tn">' + esc(x.time) + "<small>" + plural(x.ppl, "persona", "persone") + "</small></div>" +
     '<div class="who">' + esc(x.name) + ' <span class="st ' + x.status + '">' + esc(BST[x.status]) + "</span></div>" +
@@ -1516,6 +1542,10 @@ function bkMsg(x, st){
 }
 // messaggio al cliente: si prepara e si apre WhatsApp, ma lo invia il personale
 function notifyDlg(x, st, saved){
+  return msgDlg({ title: saved ? "Stato salvato: " + BST[st].toLowerCase() : "Scrivi al cliente", saved: saved, phone: x.phone, msg: bkMsg(x, st),
+    intro: saved ? "Vuoi avvisare <b>" + esc(x.name) + "</b>? Il messaggio è pronto: puoi modificarlo prima di mandarlo." : "" });
+}
+function notifyDlgOld(x, st, saved){
   var msg = bkMsg(x, st);
   openDlg({ title: saved ? "Stato salvato: " + BST[st].toLowerCase() : "Scrivi al cliente",
     body: (saved ? '<p style="margin:0">Vuoi avvisare <b>' + esc(x.name) + "</b>? Il messaggio è pronto: puoi modificarlo prima di aprirlo.</p>" : "") +
