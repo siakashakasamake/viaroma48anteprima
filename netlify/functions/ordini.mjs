@@ -9,7 +9,7 @@
 // Stati: new → accepted → preparing → ready → served (servito o ritirato); cancelled con motivazione.
 // Ogni ordine conserva nome, prezzo e allergeni dei piatti al momento dell'ordine: cambiare il menu dopo non altera lo storico.
 // Gli ordini al tavolo appartengono alla "sessione" aperta di quel tavolo (vedi tavoli.mjs).
-import { STATE_TXT, closureOf, day, itemState, json, loadSite, needRole, rangesOf, roleOf, romeMin, siteOrigin, store } from "../lib/menu.mjs";
+import { STATE_TXT, bump, closureOf, day, itemState, json, loadSite, needRole, rangesOf, roleOf, romeMin, siteOrigin, store, waitChange } from "../lib/menu.mjs";
 
 const STATUSES = ["new", "accepted", "preparing", "ready", "served", "cancelled"];
 const NEXT = { new: ["accepted", "preparing", "cancelled"], accepted: ["preparing", "cancelled"], preparing: ["ready", "cancelled"], ready: ["served", "cancelled"] };
@@ -196,6 +196,7 @@ async function createOrder(req) {
     token: rand(12),
   };
   await s.setJSON(keyOf(id), order);
+  await bump(); // la cucina e il pannello lo ricevono subito
   return json({ ...publicOrder(order), token: order.token }, 201);
 }
 
@@ -254,6 +255,7 @@ async function updateStatus(req) {
     if (to === "cancelled") upd.cancelReason = reason;
     const w = await s.setJSON(k, upd, { onlyIfMatch: cur.etag });
     if (w.modified) {
+      await bump();
       // annullato: le porzioni limitate tornano disponibili
       if (to === "cancelled") {
         const site = await loadSite(siteOrigin(req)).catch(() => null);
@@ -283,7 +285,11 @@ export default async (req) => {
     const bad = await needRole(req, ["titolare", "sala", "cucina"]);
     if (bad) return bad;
 
-    if (req.method === "GET") return json({ orders: await listOrders(), now: new Date().toISOString(), role: roleOf(req) });
+    if (req.method === "GET") {
+      // ?wait=<versione>: la risposta arriva appena c'è una novità (massimo ~8 secondi di attesa)
+      const v = url.searchParams.has("wait") ? await waitChange(url.searchParams.get("wait")) : await waitChange("");
+      return json({ orders: await listOrders(), now: new Date().toISOString(), role: roleOf(req), v });
+    }
     if (req.method === "PATCH") return await updateStatus(req);
     return json({ error: "Metodo non consentito" }, 405);
   } catch (e) {

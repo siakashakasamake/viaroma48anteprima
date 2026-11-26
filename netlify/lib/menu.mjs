@@ -9,6 +9,18 @@ export const ALLERGENS = ["Glutine", "Crostacei", "Uova", "Pesce", "Arachidi", "
 export const TZ = "Europe/Rome";
 
 export const store = () => getStore({ name: "ristorante", consistency: "strong" });
+// Segnale di modifica: cambia a ogni nuovo ordine, cambio di stato, tavolo o prenotazione.
+// Pannello e cucina restano "in ascolto" (waitChange) e si aggiornano appena cambia, senza aspettare il giro successivo.
+export const bump = () => store().set("ver", `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`).catch(() => {});
+export async function waitChange(since, ms = 7000) {
+  const s = store(), end = Date.now() + ms;
+  let v = (await s.get("ver")) || "0";
+  while (since && v === since && Date.now() < end) {
+    await new Promise((r) => setTimeout(r, 250));
+    v = (await s.get("ver")) || "0";
+  }
+  return v;
+}
 export const day = (d = new Date()) => d.toLocaleDateString("sv-SE", { timeZone: TZ }); // 2026-09-28
 
 export const json = (obj, status = 200) =>

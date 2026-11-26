@@ -6,7 +6,7 @@
 //   PATCH /api/prenotazioni  {id, status, from?, reason?}                 cambio di stato                              (titolare, sala)
 // Una richiesta ricevuta NON è una conferma: conferma sempre il personale, esplicitamente.
 // Salvate in Netlify Blobs come "pren/<giorno>/<id>".
-import { bookable, day, json, loadSite, needRole, roleOf, siteOrigin, store, toMin } from "../lib/menu.mjs";
+import { bookable, bump, day, json, loadSite, needRole, roleOf, siteOrigin, store, toMin } from "../lib/menu.mjs";
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -74,6 +74,7 @@ async function create(req) {
     history: [{ s: status, at: now, by: staff ? role : "cliente" }],
   };
   await s.setJSON(`pren/${d}/${id}`, rec);
+  await bump();
   return json({ ok: true, id, status, flags }, 201);
 }
 
@@ -117,7 +118,7 @@ async function update(req) {
     if (reason) h.reason = reason;
     const upd = { ...r, status: b.status, updatedAt: at, history: [...(r.history || [{ s: "nuova", at: r.createdAt, by: r.src === "pannello" ? "titolare" : "cliente" }]), h] };
     const w = await s.setJSON(key, upd, { onlyIfMatch: cur.etag });
-    if (w.modified) return json({ ok: true, item: upd });
+    if (w.modified) { await bump(); return json({ ok: true, item: upd }); }
   }
   return json({ error: "Modificata da un altro dispositivo, riprova" }, 409);
 }

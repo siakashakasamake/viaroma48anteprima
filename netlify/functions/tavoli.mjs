@@ -6,7 +6,7 @@
 //   POST /api/tavoli {azione:"chiudi", table, sid, forza}            libera il tavolo            (titolare, sala)
 // Sessione aperta: "tav/<tavolo>". Alla chiusura viene archiviata in "tsess/<giorno>/<sid>" con le sue comande:
 // lo storico resta, e il cliente successivo apre una sessione nuova (le comande non si mescolano).
-import { day, json, loadSite, needRole, roleOf, siteOrigin, store } from "../lib/menu.mjs";
+import { bump, day, json, loadSite, needRole, roleOf, siteOrigin, store } from "../lib/menu.mjs";
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const OPEN = ["new", "accepted", "preparing", "ready"];
@@ -62,6 +62,7 @@ async function act(req) {
     const rec = { sid: `${day(now)}_${now.getTime().toString(36)}${rand(2)}`, table, openedAt: now.toISOString(), covers: cv, by, note: clean(b.note, 120) };
     const w = await s.setJSON(key, rec, { onlyIfNew: true });
     if (!w.modified) return json({ error: `Il tavolo ${table} è già aperto`, session: await s.get(key, { type: "json" }) }, 409);
+    await bump();
     return json({ ok: true, session: rec }, 201);
   }
 
@@ -73,6 +74,7 @@ async function act(req) {
     const upd = { ...cur.data, covers: cv, note: b.note === undefined ? cur.data.note : clean(b.note, 120) };
     const w = await s.setJSON(key, upd, { onlyIfMatch: cur.etag });
     if (!w.modified) return json({ error: "Modificato da un altro dispositivo, riprova" }, 409);
+    await bump();
     return json({ ok: true, session: upd });
   }
 
@@ -91,6 +93,7 @@ async function act(req) {
     // si libera solo se nel frattempo nessuno ha toccato la sessione
     const again = await s.getWithMetadata(key, { type: "json" });
     if (again?.data?.sid === cur.data.sid) await s.delete(key);
+    await bump();
     return json({ ok: true, session: rec });
   }
   return json({ error: "Azione non valida" }, 400);
